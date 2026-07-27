@@ -21,6 +21,26 @@ const MAX_SETTIMEOUT_MS = 2_147_483_647; // setTimeout's 32-bit signed int cap (
  */
 class AlarmScheduler {
   private timers = new Map<string, ReturnType<typeof setTimeout>>();
+  private knownIds = new Set<string>();
+
+  /**
+   * Reconciles the scheduler with the current alarm list. Only cancels
+   * alarms that have actually disappeared (deleted) since the last call —
+   * critically, it does NOT blanket-cancel everything on every call. A
+   * naive "cancel everything, then reschedule" here would wipe out native
+   * AlarmManager registrations every time this ran, including just from
+   * React unmounting/remounting the Home screen when navigating to another
+   * tab and back — which defeats the entire point of scheduling through
+   * AlarmManager instead of a JS timer in the first place.
+   */
+  syncSchedule(alarms: Alarm[], onFire: FireHandler) {
+    const nextIds = new Set(alarms.map((alarm) => alarm.id));
+    this.knownIds.forEach((id) => {
+      if (!nextIds.has(id)) this.cancel(id);
+    });
+    this.knownIds = nextIds;
+    alarms.forEach((alarm) => this.schedule(alarm, onFire));
+  }
 
   schedule(alarm: Alarm, onFire: FireHandler) {
     this.cancel(alarm.id);

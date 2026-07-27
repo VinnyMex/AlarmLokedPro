@@ -29,10 +29,10 @@ export default function HomeScreen() {
   }, [load]);
 
   useEffect(() => {
-    alarms.forEach((alarm) => {
-      alarmScheduler.schedule(alarm, (fired) => navigate(`/challenge/${fired.id}`));
-    });
-    return () => alarmScheduler.cancelAll();
+    alarmScheduler.syncSchedule(alarms, (fired) => navigate(`/challenge/${fired.id}`));
+    // Deliberately no cleanup here — see syncSchedule's docstring. Cancelling
+    // native alarms just because this screen unmounted (e.g. the user
+    // switched to another tab) would silently disable every alarm.
   }, [alarms, navigate]);
 
   const handleToggle = async (alarm: Alarm) => {
