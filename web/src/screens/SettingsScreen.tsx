@@ -40,6 +40,11 @@ export default function SettingsScreen() {
 
   return (
     <div style={{ padding: spacing.md }}>
+      <SectionTitle>Subscription</SectionTitle>
+      <button onClick={() => navigate('/billing')} style={secondaryButtonStyle}>
+        Manage subscription &amp; billing
+      </button>
+
       <SectionTitle>Privacy</SectionTitle>
       <SettingRow
         label="Share location on posts"

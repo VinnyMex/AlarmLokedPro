@@ -3,7 +3,6 @@ import { ConfigModule } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { PrismaModule } from './common/prisma.module';
-import { AuditLogService } from './common/audit-log.service';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { ConsentsModule } from './consents/consents.module';
@@ -34,6 +33,5 @@ import { VisionModule } from './vision/vision.module';
     AuditLogsModule,
     VisionModule,
   ],
-  providers: [AuditLogService],
 })
 export class AppModule {}
