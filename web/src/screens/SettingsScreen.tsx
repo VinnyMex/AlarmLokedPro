@@ -4,16 +4,29 @@ import { colors, spacing } from '@/theme/colors';
 import { apiRequest } from '@/services/api';
 import { authApi } from '@/services/auth';
 import { Me, UserSettings } from '@/types';
+import { isNativeAlarmSchedulerAvailable, nativeAlarmScheduler } from '@/services/nativeAlarmScheduler';
+import { requestNotificationPermission } from '@/services/alarmScheduler';
 
 export default function SettingsScreen() {
   const navigate = useNavigate();
   const [settings, setSettings] = useState<UserSettings | null>(null);
+  const [notificationsGranted, setNotificationsGranted] = useState<boolean | null>(null);
+  const [fullScreenAllowed, setFullScreenAllowed] = useState<boolean | null>(null);
 
   useEffect(() => {
     apiRequest<Me>('/me')
       .then((me) => setSettings(me.settings))
       .catch((error) => console.warn('Failed to load settings', error));
+
+    if (isNativeAlarmSchedulerAvailable()) {
+      nativeAlarmScheduler.checkFullScreenIntentPermission().then((r) => setFullScreenAllowed(r.allowed));
+    }
   }, []);
+
+  const handleRequestNotifications = async () => {
+    const result = await requestNotificationPermission();
+    setNotificationsGranted(result === 'granted');
+  };
 
   const updateSetting = async (patch: Partial<UserSettings>) => {
     setSettings((prev) => (prev ? { ...prev, ...patch } : prev));
@@ -44,6 +57,26 @@ export default function SettingsScreen() {
       <button onClick={() => navigate('/billing')} style={secondaryButtonStyle}>
         Manage subscription &amp; billing
       </button>
+
+      {isNativeAlarmSchedulerAvailable() && (
+        <>
+          <SectionTitle>Alarm permissions (Android)</SectionTitle>
+          <p style={{ color: colors.textSecondary, fontSize: 12, marginTop: -spacing.xs, marginBottom: spacing.sm }}>
+            Both of these are required for alarms to actually take over the screen when they fire.
+          </p>
+          <button onClick={handleRequestNotifications} style={secondaryButtonStyle}>
+            {notificationsGranted === false ? 'Notification permission denied — open Settings' : 'Allow notifications'}
+          </button>
+          {fullScreenAllowed === false && (
+            <button
+              onClick={() => nativeAlarmScheduler.openFullScreenIntentSettings()}
+              style={secondaryButtonStyle}
+            >
+              Allow full-screen alarms (required on Android 14+)
+            </button>
+          )}
+        </>
+      )}
 
       <SectionTitle>Privacy</SectionTitle>
       <SettingRow

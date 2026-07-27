@@ -1,4 +1,5 @@
 import { Alarm } from '@/types';
+import { isNativeAlarmSchedulerAvailable, nativeAlarmScheduler } from './nativeAlarmScheduler';
 
 type FireHandler = (alarm: Alarm) => void;
 
@@ -7,12 +8,16 @@ const MAX_SETTIMEOUT_MS = 2_147_483_647; // setTimeout's 32-bit signed int cap (
 /**
  * Client-side alarm scheduler.
  *
- * IMPORTANT LIMITATION: this only fires while the AlarmLock tab/PWA window
- * is open (the browser suspends timers in background/closed tabs, and there
- * is no web API to wake a closed PWA to full-screen a locked device the way
- * a native alarm app can). It's enough to demo and dogfood the challenge
- * flow, but it is not a substitute for a native background alarm — see the
- * README's "Known gaps" section before relying on this for real wake-ups.
+ * On plain web (browser tab / installed PWA with no native shell) this only
+ * fires while the AlarmLock tab is open — browsers suspend timers in
+ * background/closed tabs, and there is no web API to wake a closed page to
+ * full-screen a locked device. Inside the Capacitor Android shell, `schedule`
+ * instead hands the alarm to AlarmManager via nativeAlarmScheduler (see
+ * android/app/src/main/java/com/alarmlock/premium/AlarmSchedulerPlugin.java),
+ * which survives the app being closed or the device being locked — that's
+ * the whole reason the native wrapper exists. `onFire` still only fires here
+ * for the web fallback path; the native path instead delivers the alarm via
+ * a pending-alarm-id handoff consumed on app resume (see App.tsx).
  */
 class AlarmScheduler {
   private timers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -21,7 +26,21 @@ class AlarmScheduler {
     this.cancel(alarm.id);
     if (alarm.status !== 'ACTIVE') return;
 
-    const delay = new Date(alarm.scheduledAt).getTime() - Date.now();
+    const triggerAt = new Date(alarm.scheduledAt).getTime();
+
+    if (isNativeAlarmSchedulerAvailable()) {
+      nativeAlarmScheduler
+        .schedule({
+          id: alarm.id,
+          title: 'AlarmLock',
+          body: `${alarm.title} — show the requested object to silence the alarm.`,
+          triggerAt,
+        })
+        .catch((error) => console.warn('Native alarm schedule failed', error));
+      return;
+    }
+
+    const delay = triggerAt - Date.now();
     if (delay <= 0 || delay > MAX_SETTIMEOUT_MS) return;
 
     const timer = setTimeout(() => {
@@ -33,6 +52,10 @@ class AlarmScheduler {
   }
 
   cancel(alarmId: string) {
+    if (isNativeAlarmSchedulerAvailable()) {
+      nativeAlarmScheduler.cancel({ id: alarmId }).catch((error) => console.warn('Native alarm cancel failed', error));
+    }
+
     const timer = this.timers.get(alarmId);
     if (timer) {
       clearTimeout(timer);
@@ -41,6 +64,10 @@ class AlarmScheduler {
   }
 
   cancelAll() {
+    if (isNativeAlarmSchedulerAvailable()) {
+      nativeAlarmScheduler.cancelAll().catch((error) => console.warn('Native alarm cancelAll failed', error));
+    }
+
     this.timers.forEach((timer) => clearTimeout(timer));
     this.timers.clear();
   }
@@ -55,6 +82,10 @@ class AlarmScheduler {
 export const alarmScheduler = new AlarmScheduler();
 
 export async function requestNotificationPermission() {
+  if (isNativeAlarmSchedulerAvailable()) {
+    const result = await nativeAlarmScheduler.requestNotificationPermission();
+    return result.granted ? 'granted' : 'denied';
+  }
   if (!('Notification' in window)) return 'unsupported' as const;
   if (Notification.permission === 'default') {
     return Notification.requestPermission();

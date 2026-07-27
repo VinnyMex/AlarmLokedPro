@@ -11,23 +11,31 @@ a NestJS API (`/backend`) and an installable web app / PWA (`/web`).
 ## Repository layout
 
 ```
-backend/   NestJS + PostgreSQL API — auth, alarms, billing, gamification, vision validation
-web/       Vite + React + TypeScript PWA — alarms, camera challenge, progress, sharing
+backend/     NestJS + PostgreSQL API — auth, alarms, billing, gamification, vision validation
+web/         Vite + React + TypeScript PWA — alarms, camera challenge, progress, sharing
+web/android/ Capacitor Android shell wrapping the same web app — real background alarms
 ```
 
-## Why a PWA to start
+## Why a PWA to start (and a native shell for real alarms)
 
 Starting with a PWA gets a single codebase installable on desktop and mobile
 home screens with no app-store review cycle, which is the fastest way to
 validate the product hooks (challenge completion, streaks, trial conversion)
-end to end. The trade-off to know going in: **browsers do not give a PWA a
-reliable way to wake a locked device or run a full-screen alarm while the
-app is closed.** `web/src/services/alarmScheduler.ts` fires alarms while the
-tab is open (and best-effort via Notifications when backgrounded on some
-platforms), but it is not a substitute for a native background alarm. If
-"wakes you up even if you close the app" becomes a hard requirement, wrap
-this same UI in Capacitor or rebuild the alarm-firing path natively — see
-Known gaps below.
+end to end. The trade-off: **browsers do not give a PWA a reliable way to
+wake a locked device or run a full-screen alarm while the app is closed.**
+`web/src/services/alarmScheduler.ts` fires alarms while the tab is open, but
+that's not a substitute for a real background alarm.
+
+For that, `web/android/` wraps the exact same web app in Capacitor with a
+custom native plugin (`AlarmSchedulerPlugin`) that schedules alarms with
+Android's `AlarmManager.setAlarmClock()` instead of a JS timer — the same
+API the system Clock app uses, which is why it survives the app being killed
+and is exempt from Doze/battery-optimization restrictions without needing
+any special permission dance. `alarmScheduler.ts` detects when it's running
+inside this native shell (`Capacitor.isNativePlatform()`) and delegates to
+it automatically; everywhere else (plain browser, installed PWA) it falls
+back to the JS timer unchanged. See "Android native wrapper" below for how
+to build and run it. iOS has no equivalent yet — see Known gaps.
 
 ## Architecture
 
@@ -178,6 +186,97 @@ Camera access (`getUserMedia`) requires a secure context — `localhost` is
 exempt, but testing from another device on your LAN needs HTTPS or a tunnel
 (e.g. `ngrok`).
 
+## Android native wrapper (real background alarms)
+
+This is what makes an alarm actually fire with the app closed and the phone
+locked — the PWA fundamentally cannot do that (see above). It's a real
+Android app (Capacitor shell + custom Java plugin), not a bookmark.
+
+### How it works
+
+- `web/src/services/nativeAlarmScheduler.ts` is a typed bridge to
+  `web/android/app/src/main/java/com/alarmlock/premium/AlarmSchedulerPlugin.java`.
+  `alarmScheduler.ts` calls it instead of `setTimeout` whenever
+  `Capacitor.isNativePlatform()` is true.
+- Scheduling uses `AlarmManager.setAlarmClock()`, not
+  `setExactAndAllowWhileIdle()` — deliberately. `setAlarmClock` is the same
+  API the system Clock app uses, is exempt from Doze/App-Standby/battery
+  optimization everywhere, and (unlike exact alarms on Android 12+) needs no
+  special `SCHEDULE_EXACT_ALARM` permission grant.
+- When it fires, `AlarmReceiver.java` posts a notification with
+  `setFullScreenIntent()` pointing back at `MainActivity` — the standard
+  alarm-clock idiom, letting Android bring the app to the front over the
+  lock screen instead of waiting for a tap. `MainActivity.java` then applies
+  `setShowWhenLocked`/`setTurnScreenOn` and requests a keyguard dismiss (a
+  PIN/biometric lock still requires the user to unlock, same as any other
+  alarm app).
+- The fired alarm's id is handed to the web app via a small
+  SharedPreferences value (`AlarmStore.java`), not a deep link — the native
+  side has no notion of the SPA's routes. `App.tsx`'s `PendingAlarmHandler`
+  reads it on cold start and on every resume (`@capacitor/app`'s `resume`
+  event) and navigates to `/challenge/:id`.
+- `BootReceiver.java` re-registers every still-future alarm with
+  `AlarmManager` on `BOOT_COMPLETED`, since Android wipes all scheduled
+  alarms on every reboot.
+
+### Building it
+
+```bash
+cd web
+# IMPORTANT: bake in the real backend URL — inside the app, "localhost"
+# means the phone itself, not your deployed API.
+VITE_API_URL=https://alarmlock-backend.onrender.com npm run build
+npx cap sync android
+cd android
+./gradlew assembleDebug   # -> app/build/outputs/apk/debug/app-debug.apk
+```
+
+Requires a JDK (17+) and the Android SDK (command-line tools + platform 34+
+& build-tools are enough; you don't need full Android Studio, though it's
+the easier path if you have it — open `web/android` in it and hit Run).
+`local.properties` (holding your `sdk.dir`) is gitignored; create it
+yourself: `echo "sdk.dir=/path/to/Android/sdk" > web/android/local.properties`.
+
+Install the resulting APK with `adb install -r app-debug.apk`, or copy it to
+the phone and open it directly (Android will prompt to allow installs from
+that source — this is a debug build, not from the Play Store).
+
+### First-run setup on the phone
+
+Open Settings in the app and tap both permission buttons under "Alarm
+permissions (Android)":
+1. **Allow notifications** (Android 13+ requires this at runtime or the
+   fallback notification can't show — the full-screen takeover can still
+   work without it, but you lose the status-bar entry).
+2. **Allow full-screen alarms** (Android 14+ only, and only shown if not
+   already granted) — this opens a system settings screen; there's no
+   in-app runtime prompt for it, Android requires the user to flip it
+   themselves.
+
+### What's actually verified vs. not
+
+Verified in this repo: the full Gradle build (Java 21, Android SDK 34/36,
+AGP 8.13) compiles and packages cleanly, producing a working
+`app-debug.apk`, and the merged manifest carries every permission/receiver
+correctly. **Not verified**: real-device behavior — the actual lock-screen
+takeover, the Android 14 full-screen-intent settings flow, notification
+permission prompts, and boot-time alarm rescheduling after a real reboot all
+need a physical phone or emulator, which wasn't available to test this from.
+Some OEM battery managers (Xiaomi/MIUI, Huawei, some Samsung skins) are
+known to throttle background receivers more aggressively than stock Android
+even for apps using the "correct" APIs — if alarms are unreliable on a
+specific phone, the fix is usually whitelisting the app in that OEM's
+battery/auto-start settings, not a bug in this code. Report back what you
+see on a real device so anything that needs fixing gets fixed.
+
+### iOS
+
+Out of scope for this pass (Android was prioritized because it's the only
+platform where a true forced full-screen alarm is achievable at all without
+a special Apple entitlement — see the "Why a PWA" section above). The same
+Capacitor project could get an `ios/` platform later, but it would only ever
+manage a local notification the user has to tap, not a forced takeover.
+
 ## API surface
 
 See `backend/src/*/[name].controller.ts` for the implementation of every
@@ -191,10 +290,11 @@ audit-logs, and account deletion.
 This is the Phase 0–1 MVP slice (see the product spec's roadmap). Not yet
 built:
 
-- **Reliable background alarms.** The single biggest gap for an "alarm"
-  product built as a PWA — see the section above. Plan to wrap the web UI in
-  Capacitor (or port the challenge/alarm screens natively) once this needs
-  to work with the app closed and the phone locked.
+- **Reliable background alarms on iOS.** Solved for Android (see "Android
+  native wrapper" above). iOS has no equivalent — Apple doesn't allow
+  third-party apps to force a full-screen takeover from the background
+  without a Critical Alerts entitlement that isn't available for general
+  apps, so an iOS build would be limited to a tappable local notification.
 - Real in-browser object detection (TensorFlow.js/MediaPipe) — currently
   stubbed to always report a confident match so the rest of the flow is
   demoable end to end.

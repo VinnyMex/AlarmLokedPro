@@ -1,6 +1,8 @@
-import React from 'react';
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import React, { useEffect } from 'react';
+import { BrowserRouter, Navigate, Route, Routes, useNavigate } from 'react-router-dom';
+import { App as CapacitorApp } from '@capacitor/app';
 import { isAuthenticated } from '@/services/api';
+import { isNativeAlarmSchedulerAvailable, nativeAlarmScheduler } from '@/services/nativeAlarmScheduler';
 import AppShell from '@/navigation/AppShell';
 import LoginScreen from '@/screens/LoginScreen';
 import HomeScreen from '@/screens/HomeScreen';
@@ -15,9 +17,43 @@ function RequireAuth({ children }: { children: React.ReactElement }) {
   return isAuthenticated() ? children : <Navigate to="/login" replace />;
 }
 
+/**
+ * Bridges the native Android alarm hand-off into React Router: when
+ * AlarmReceiver fires (see android/.../AlarmReceiver.java), it stashes the
+ * firing alarm's id for the web app to pick up rather than pushing a route
+ * directly — the native side has no notion of the SPA's routes. This reads
+ * that id on cold start and every time the app resumes to the foreground,
+ * and navigates to the challenge screen. No-op outside the Capacitor
+ * Android shell (isNativeAlarmSchedulerAvailable() is false there).
+ */
+function PendingAlarmHandler() {
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (!isNativeAlarmSchedulerAvailable()) return;
+
+    let cancelled = false;
+    const checkPending = async () => {
+      const { alarmId } = await nativeAlarmScheduler.consumePendingAlarmId();
+      if (alarmId && !cancelled) navigate(`/challenge/${alarmId}`);
+    };
+
+    checkPending();
+    const listenerPromise = CapacitorApp.addListener('resume', checkPending);
+
+    return () => {
+      cancelled = true;
+      listenerPromise.then((handle) => handle.remove());
+    };
+  }, [navigate]);
+
+  return null;
+}
+
 export default function App() {
   return (
     <BrowserRouter>
+      <PendingAlarmHandler />
       <Routes>
         <Route path="/login" element={<LoginScreen />} />
         <Route
