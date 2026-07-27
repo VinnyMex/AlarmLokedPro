@@ -132,6 +132,43 @@ and open the `https://…ngrok…` URL it prints on the phone instead. For
 anything beyond ad hoc testing, replace the tunnel with a real reverse proxy
 (Caddy/Traefik) terminating TLS in front of the `web` service.
 
+### Testing from a phone with no computer at all: deploy to Render
+
+This needs no local machine, no Docker, and gives a real HTTPS URL — done
+entirely from the Render dashboard in a phone browser, ~10 taps:
+
+1. **Create a Render account** at render.com and connect your GitHub account
+   (this repo, `VinnyMex/AlarmLokedPro`).
+2. **New + → PostgreSQL** (free tier). Once it's up, open it and copy the
+   **Internal Database URL** (not the external one — internal is
+   unauthenticated-over-the-network-safe and doesn't need `sslmode=require`).
+3. **New + → Web Service** → pick this repo → set **Root Directory** to
+   `backend` and **Environment** to `Docker` (it'll pick up `backend/Dockerfile`
+   automatically). Add environment variables:
+   - `DATABASE_URL` — paste the Internal Database URL from step 2
+   - `JWT_SECRET` — use Render's "Generate" button for a random value
+   - `JWT_EXPIRES_IN=15m`, `JWT_REFRESH_EXPIRES_IN=30d`
+   - Leave `PORT` unset — Render injects its own and `main.ts` already reads
+     `process.env.PORT`.
+   Deploy, then copy the service's public URL once it's live (something like
+   `https://alarmlock-backend.onrender.com`) — `POST /auth/register` against
+   it should return tokens.
+4. **New + → Static Site** → same repo → **Root Directory** `web`,
+   **Build Command** `npm ci && npm run build`, **Publish Directory** `dist`.
+   Add environment variable `VITE_API_URL` set to the backend URL from step
+   3 (this bakes it into the build — `web/src/services/api.ts` falls back to
+   it when there's no Docker runtime-config). `web/public/_redirects` is
+   already in the repo so client-side routing works on Render's static
+   hosting without extra config.
+5. Open the static site's `https://…onrender.com` URL on your phone. Full
+   HTTPS, so the camera challenge screen works like it would in production.
+
+The backend Dockerfile runs `prisma migrate deploy` on every container
+start, so the database schema is created automatically on first deploy —
+no manual migration step needed. Render's free tier spins services down
+after inactivity, so the first request after a while will be slow (~30s
+cold start); that's expected, not a bug.
+
 Camera access (`getUserMedia`) requires a secure context — `localhost` is
 exempt, but testing from another device on your LAN needs HTTPS or a tunnel
 (e.g. `ngrok`).
