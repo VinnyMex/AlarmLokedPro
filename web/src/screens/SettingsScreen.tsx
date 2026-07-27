@@ -4,7 +4,7 @@ import { colors, spacing } from '@/theme/colors';
 import { apiRequest } from '@/services/api';
 import { authApi } from '@/services/auth';
 import { Me, UserSettings } from '@/types';
-import { isNativeAlarmSchedulerAvailable, nativeAlarmScheduler } from '@/services/nativeAlarmScheduler';
+import { AlarmDiagnostics, isNativeAlarmSchedulerAvailable, nativeAlarmScheduler } from '@/services/nativeAlarmScheduler';
 import { requestNotificationPermission } from '@/services/alarmScheduler';
 
 export default function SettingsScreen() {
@@ -12,6 +12,12 @@ export default function SettingsScreen() {
   const [settings, setSettings] = useState<UserSettings | null>(null);
   const [notificationsGranted, setNotificationsGranted] = useState<boolean | null>(null);
   const [fullScreenAllowed, setFullScreenAllowed] = useState<boolean | null>(null);
+  const [diagnostics, setDiagnostics] = useState<AlarmDiagnostics | null>(null);
+
+  const loadDiagnostics = () => {
+    if (!isNativeAlarmSchedulerAvailable()) return;
+    nativeAlarmScheduler.getDiagnostics().then(setDiagnostics).catch((err) => console.warn('Diagnostics failed', err));
+  };
 
   useEffect(() => {
     apiRequest<Me>('/me')
@@ -20,12 +26,14 @@ export default function SettingsScreen() {
 
     if (isNativeAlarmSchedulerAvailable()) {
       nativeAlarmScheduler.checkFullScreenIntentPermission().then((r) => setFullScreenAllowed(r.allowed));
+      loadDiagnostics();
     }
   }, []);
 
   const handleRequestNotifications = async () => {
     const result = await requestNotificationPermission();
     setNotificationsGranted(result === 'granted');
+    loadDiagnostics();
   };
 
   const updateSetting = async (patch: Partial<UserSettings>) => {
@@ -75,6 +83,59 @@ export default function SettingsScreen() {
               Allow full-screen alarms (required on Android 14+)
             </button>
           )}
+          {diagnostics?.ignoringBatteryOptimizations === false && (
+            <button
+              onClick={() => nativeAlarmScheduler.requestIgnoreBatteryOptimizations()}
+              style={secondaryButtonStyle}
+            >
+              Disable battery optimization for AlarmLock
+            </button>
+          )}
+
+          <SectionTitle>Alarm diagnostics</SectionTitle>
+          <p style={{ color: colors.textSecondary, fontSize: 12, marginTop: -spacing.xs, marginBottom: spacing.sm }}>
+            If an alarm isn't firing, check this after creating it — it shows
+            exactly what's registered with Android, not just what the app
+            thinks happened.
+          </p>
+          <div
+            style={{
+              background: colors.surface,
+              border: `1px solid ${colors.border}`,
+              borderRadius: 12,
+              padding: spacing.md,
+              marginBottom: spacing.sm,
+              fontSize: 13,
+              color: colors.textSecondary,
+            }}
+          >
+            {diagnostics ? (
+              <>
+                <DiagnosticRow label="Notifications granted" value={diagnostics.notificationsGranted} />
+                <DiagnosticRow label="Full-screen alarms allowed" value={diagnostics.fullScreenIntentAllowed} />
+                <DiagnosticRow label="Battery optimization disabled" value={diagnostics.ignoringBatteryOptimizations} />
+                <div style={{ marginTop: spacing.sm, color: colors.textPrimary, fontWeight: 600 }}>
+                  Alarms registered with Android: {diagnostics.persistedAlarms.length}
+                </div>
+                {diagnostics.persistedAlarms.map((alarm) => (
+                  <div key={alarm.id} style={{ marginTop: spacing.xs }}>
+                    {alarm.title} → {new Date(alarm.triggerAt).toLocaleString()}
+                  </div>
+                ))}
+                <div style={{ marginTop: spacing.sm }}>
+                  System's next alarm-clock:{' '}
+                  {diagnostics.systemNextAlarmClockTriggerAt
+                    ? new Date(diagnostics.systemNextAlarmClockTriggerAt).toLocaleString()
+                    : 'none'}
+                </div>
+              </>
+            ) : (
+              'Loading…'
+            )}
+          </div>
+          <button onClick={loadDiagnostics} style={secondaryButtonStyle}>
+            Refresh diagnostics
+          </button>
         </>
       )}
 
@@ -111,6 +172,15 @@ export default function SettingsScreen() {
       <button onClick={handleDeleteAccount} style={dangerButtonStyle}>
         Delete my account and data
       </button>
+    </div>
+  );
+}
+
+function DiagnosticRow({ label, value }: { label: string; value: boolean }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+      <span>{label}</span>
+      <span style={{ color: value ? colors.success : colors.accent, fontWeight: 700 }}>{value ? 'Yes' : 'No'}</span>
     </div>
   );
 }

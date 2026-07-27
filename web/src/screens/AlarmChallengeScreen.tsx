@@ -32,7 +32,6 @@ export default function AlarmChallengeScreen() {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
         streamRef.current = stream;
-        if (videoRef.current) videoRef.current.srcObject = stream;
         setPhase('scanning');
       } catch (error) {
         setPhase('camera-denied');
@@ -43,6 +42,18 @@ export default function AlarmChallengeScreen() {
       streamRef.current?.getTracks().forEach((track) => track.stop());
     };
   }, [alarmId]);
+
+  // The <video> element only exists once phase becomes 'scanning' (the
+  // 'requesting-camera' phase above renders a plain loading screen with no
+  // video tag at all), so the stream can't be attached until after that
+  // re-render — assigning srcObject inside the same async block that
+  // resolves getUserMedia was always attaching to a videoRef that hadn't
+  // mounted yet, leaving the eventual <video> with no stream (black screen).
+  useEffect(() => {
+    if (phase === 'scanning' && videoRef.current && streamRef.current) {
+      videoRef.current.srcObject = streamRef.current;
+    }
+  }, [phase]);
 
   useEffect(() => {
     if (phase !== 'scanning' || secondsLeft <= 0) return;

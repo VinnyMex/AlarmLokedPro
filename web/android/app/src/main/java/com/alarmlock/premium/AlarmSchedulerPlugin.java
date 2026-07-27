@@ -8,8 +8,10 @@ import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Build;
+import android.os.PowerManager;
 import android.provider.Settings;
 
+import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.PermissionState;
 import com.getcapacitor.Plugin;
@@ -168,6 +170,71 @@ public class AlarmSchedulerPlugin extends Plugin {
         } catch (Exception e) {
             // No-op: worst case the user has to find this settings screen
             // themselves, which isn't worth crashing over.
+        }
+        call.resolve();
+    }
+
+    /**
+     * Surfaces exactly what's actually registered/allowed, for
+     * troubleshooting "the alarm didn't fire" reports without needing a
+     * connected device's logcat: what this plugin persisted, what
+     * AlarmManager itself reports as the system's next alarm-clock firing
+     * (AlarmManager.getNextAlarmClock() reflects any app's setAlarmClock,
+     * so if it's null or doesn't match, our registration didn't take),
+     * and the permission/battery-optimization state that gates whether a
+     * fired alarm can actually reach the user.
+     */
+    @PluginMethod
+    public void getDiagnostics(PluginCall call) {
+        JSObject result = new JSObject();
+        try {
+            List<AlarmStore.StoredAlarm> alarms = AlarmStore.loadAll(getContext());
+            JSArray scheduled = new JSArray();
+            for (AlarmStore.StoredAlarm alarm : alarms) {
+                JSObject entry = new JSObject();
+                entry.put("id", alarm.id);
+                entry.put("title", alarm.title);
+                entry.put("triggerAt", alarm.triggerAt);
+                scheduled.put(entry);
+            }
+            result.put("persistedAlarms", scheduled);
+
+            AlarmManager alarmManager = (AlarmManager) getContext().getSystemService(Context.ALARM_SERVICE);
+            AlarmManager.AlarmClockInfo nextAlarmClock = alarmManager != null ? alarmManager.getNextAlarmClock() : null;
+            result.put("systemNextAlarmClockTriggerAt", nextAlarmClock != null ? nextAlarmClock.getTriggerTime() : null);
+
+            boolean notificationsGranted =
+                    Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU || getPermissionState("notifications") == PermissionState.GRANTED;
+            result.put("notificationsGranted", notificationsGranted);
+
+            boolean fullScreenAllowed = true;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                NotificationManager manager = getContext().getSystemService(NotificationManager.class);
+                fullScreenAllowed = manager != null && manager.canUseFullScreenIntent();
+            }
+            result.put("fullScreenIntentAllowed", fullScreenAllowed);
+
+            PowerManager powerManager = (PowerManager) getContext().getSystemService(Context.POWER_SERVICE);
+            boolean ignoringBatteryOptimizations =
+                    powerManager == null || powerManager.isIgnoringBatteryOptimizations(getContext().getPackageName());
+            result.put("ignoringBatteryOptimizations", ignoringBatteryOptimizations);
+
+            call.resolve(result);
+        } catch (Exception e) {
+            call.reject("Failed to read diagnostics: " + e.getMessage(), e);
+        }
+    }
+
+    @PluginMethod
+    public void requestIgnoreBatteryOptimizations(PluginCall call) {
+        try {
+            Intent intent = new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS);
+            intent.setData(Uri.parse("package:" + getContext().getPackageName()));
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            getContext().startActivity(intent);
+        } catch (Exception e) {
+            // No-op: worst case the user has to find this settings screen
+            // themselves.
         }
         call.resolve();
     }
