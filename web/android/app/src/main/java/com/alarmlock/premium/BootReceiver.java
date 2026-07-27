@@ -14,16 +14,22 @@ import java.util.List;
 public class BootReceiver extends BroadcastReceiver {
     @Override
     public void onReceive(Context context, Intent intent) {
-        if (!Intent.ACTION_BOOT_COMPLETED.equals(intent.getAction())) return;
+        if (intent == null || !Intent.ACTION_BOOT_COMPLETED.equals(intent.getAction())) return;
 
-        long now = System.currentTimeMillis();
-        List<AlarmStore.StoredAlarm> alarms = AlarmStore.loadAll(context);
-        for (AlarmStore.StoredAlarm alarm : alarms) {
-            if (alarm.triggerAt <= now) {
-                AlarmStore.remove(context, alarm.id);
-                continue;
+        try {
+            long now = System.currentTimeMillis();
+            List<AlarmStore.StoredAlarm> alarms = AlarmStore.loadAll(context);
+            for (AlarmStore.StoredAlarm alarm : alarms) {
+                if (alarm.triggerAt <= now) {
+                    AlarmStore.remove(context, alarm.id);
+                    continue;
+                }
+                AlarmSchedulerPlugin.registerWithAlarmManager(context, alarm);
             }
-            AlarmSchedulerPlugin.registerWithAlarmManager(context, alarm);
+        } catch (Exception e) {
+            // Losing a reschedule on boot is recoverable (the app can
+            // re-sync alarms next time it opens); crashing the receiver
+            // is not.
         }
     }
 }

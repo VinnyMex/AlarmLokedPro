@@ -277,6 +277,67 @@ a special Apple entitlement — see the "Why a PWA" section above). The same
 Capacitor project could get an `ios/` platform later, but it would only ever
 manage a local notification the user has to tap, not a forced takeover.
 
+### Fixes from real-device testing
+
+Two bugs only showed up once this actually ran on a phone instead of just
+compiling in this sandbox:
+
+- **Crash right after login.** `AlarmSchedulerPlugin`'s notification
+  permission callback called `.toString()` on `getPermissionState(...)`,
+  which can return `null` — an uncaught `NullPointerException` there kills
+  the whole app, and this fired automatically on every Home screen mount
+  (right after login) on Android 13+. Fixed by comparing the `PermissionState`
+  enum directly instead, and every plugin method (and both
+  `BroadcastReceiver`s) now catches its own exceptions rather than letting
+  anything escape uncaught — a missed notification or a failed reschedule is
+  recoverable, a process crash is not. The automatic permission request on
+  Home mount was also removed entirely in favor of the explicit buttons in
+  Settings, so nothing native fires unprompted right after login anymore.
+- **Session not persisting.** The web app never actually called
+  `POST /auth/refresh` — access tokens expire after 15 minutes
+  (`JWT_EXPIRES_IN`) and every request just silently started failing after
+  that with no visible error and no re-login prompt. `api.ts` now refreshes
+  transparently on a 401 and retries the original request once; only a
+  refresh failure (refresh token itself expired/revoked, i.e. after the
+  full 30-day `JWT_REFRESH_EXPIRES_IN` window) clears tokens and bounces to
+  `/login`. Combined with the crash fix, staying logged in should now just
+  work — Capacitor's WebView localStorage already persists across app
+  restarts on its own, that part was never the problem.
+
+### Google Sign-In
+
+Backend (`POST /auth/google`) and native Android (Credential Manager, the
+current Google-recommended API — not the deprecated `GoogleSignInClient`,
+and not Google Identity Services' web JS, which Google blocks inside
+embedded WebViews) are both implemented and compiled/verified. It's inert
+until you provide real Google OAuth credentials — I can't create those for
+you, they're tied to your Google account:
+
+1. In [Google Cloud Console](https://console.cloud.google.com/) (any
+   project), go to **APIs & Services → Credentials** and configure the
+   OAuth consent screen if you haven't already (External is fine for
+   testing).
+2. **Create Credentials → OAuth client ID → Web application.** No redirect
+   URIs needed for this flow. This gives you a **Web Client ID** — not a
+   secret, safe to put in both configs below.
+3. **Create Credentials → OAuth client ID → Android.** Package name
+   `com.alarmlock.premium`. SHA-1: for the exact APK already sent to you
+   (built in this environment's auto-generated debug keystore),
+   it's `3E:A1:D4:3D:50:FF:92:4A:FB:A5:1F:5E:04:12:D2:F0:AE:C4:0B:2B`. If you
+   build the APK yourself later with your own debug keystore instead, get
+   your own SHA-1 with:
+   `keytool -list -v -keystore ~/.android/debug.keystore -alias androiddebugkey -storepass android -keypass android`
+   You don't need to put anything from this Android client ID into any
+   config file — Google matches it internally by package name + SHA-1 when
+   the app requests a credential.
+4. Set the **Web Client ID** from step 2 as `GOOGLE_CLIENT_ID` on the
+   backend (Render → `alarmlock-backend` → Environment) and as
+   `VITE_GOOGLE_CLIENT_ID` when building the web app / Android APK (same
+   value in both places — the button is hidden entirely until this is set).
+5. Rebuild: web (`VITE_API_URL=... VITE_GOOGLE_CLIENT_ID=... npm run
+   build`), redeploy the Render static site with that same env var added,
+   and for Android run `npm run android:build` again and reinstall the APK.
+
 ## API surface
 
 See `backend/src/*/[name].controller.ts` for the implementation of every

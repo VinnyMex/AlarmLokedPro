@@ -27,75 +27,82 @@ public class AlarmReceiver extends BroadcastReceiver {
 
     @Override
     public void onReceive(Context context, Intent intent) {
+        if (intent == null) return;
         String alarmId = intent.getStringExtra(EXTRA_ALARM_ID);
         if (alarmId == null) return;
 
-        String title = intent.getStringExtra("title");
-        String body = intent.getStringExtra("body");
-        if (title == null) title = "AlarmLock";
-        if (body == null) body = "Show the requested object to silence the alarm.";
-
-        // Hold a short wake lock so the CPU doesn't slip back to sleep
-        // between this receiver running and the full-screen activity
-        // actually coming up.
-        PowerManager powerManager = (PowerManager) context.getSystemService(Context.POWER_SERVICE);
         PowerManager.WakeLock wakeLock = null;
-        if (powerManager != null) {
-            wakeLock = powerManager.newWakeLock(
-                    PowerManager.PARTIAL_WAKE_LOCK | PowerManager.ACQUIRE_CAUSES_WAKEUP,
-                    "alarmlock:alarm-receiver"
+        try {
+            String title = intent.getStringExtra("title");
+            String body = intent.getStringExtra("body");
+            if (title == null) title = "AlarmLock";
+            if (body == null) body = "Show the requested object to silence the alarm.";
+
+            // Hold a short wake lock so the CPU doesn't slip back to sleep
+            // between this receiver running and the full-screen activity
+            // actually coming up.
+            PowerManager powerManager = (PowerManager) context.getSystemService(Context.POWER_SERVICE);
+            if (powerManager != null) {
+                wakeLock = powerManager.newWakeLock(
+                        PowerManager.PARTIAL_WAKE_LOCK | PowerManager.ACQUIRE_CAUSES_WAKEUP,
+                        "alarmlock:alarm-receiver"
+                );
+                wakeLock.acquire(10_000);
+            }
+
+            AlarmStore.setPendingAlarmId(context, alarmId);
+
+            Intent launchIntent = new Intent(context, MainActivity.class);
+            launchIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+            launchIntent.putExtra(EXTRA_ALARM_ID, alarmId);
+            launchIntent.putExtra(EXTRA_ALARM_TRIGGER, true);
+
+            int requestCode = alarmId.hashCode();
+            PendingIntent fullScreenPendingIntent = PendingIntent.getActivity(
+                    context,
+                    requestCode,
+                    launchIntent,
+                    PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
             );
-            wakeLock.acquire(10_000);
-        }
 
-        AlarmStore.setPendingAlarmId(context, alarmId);
+            createChannelIfNeeded(context);
 
-        Intent launchIntent = new Intent(context, MainActivity.class);
-        launchIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
-        launchIntent.putExtra(EXTRA_ALARM_ID, alarmId);
-        launchIntent.putExtra(EXTRA_ALARM_TRIGGER, true);
+            NotificationCompat.Builder builder = new NotificationCompat.Builder(context, CHANNEL_ID)
+                    .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
+                    .setContentTitle(title)
+                    .setContentText(body)
+                    .setPriority(NotificationCompat.PRIORITY_HIGH)
+                    .setCategory(NotificationCompat.CATEGORY_ALARM)
+                    .setAutoCancel(true)
+                    .setOngoing(true)
+                    .setContentIntent(fullScreenPendingIntent)
+                    .setFullScreenIntent(fullScreenPendingIntent, true);
 
-        int requestCode = alarmId.hashCode();
-        PendingIntent fullScreenPendingIntent = PendingIntent.getActivity(
-                context,
-                requestCode,
-                launchIntent,
-                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
-        );
+            try {
+                NotificationManagerCompat.from(context).notify(requestCode, builder.build());
+            } catch (SecurityException e) {
+                // POST_NOTIFICATIONS not granted (Android 13+). The full-screen
+                // intent's own startActivity fallback below still gets the user
+                // to the challenge screen; only the status-bar entry is lost.
+            }
 
-        createChannelIfNeeded(context);
-
-        NotificationCompat.Builder builder = new NotificationCompat.Builder(context, CHANNEL_ID)
-                .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
-                .setContentTitle(title)
-                .setContentText(body)
-                .setPriority(NotificationCompat.PRIORITY_HIGH)
-                .setCategory(NotificationCompat.CATEGORY_ALARM)
-                .setAutoCancel(true)
-                .setOngoing(true)
-                .setContentIntent(fullScreenPendingIntent)
-                .setFullScreenIntent(fullScreenPendingIntent, true);
-
-        try {
-            NotificationManagerCompat.from(context).notify(requestCode, builder.build());
-        } catch (SecurityException e) {
-            // POST_NOTIFICATIONS not granted (Android 13+). The full-screen
-            // intent's own startActivity fallback below still gets the user
-            // to the challenge screen; only the status-bar entry is lost.
-        }
-
-        // Some OEM skins only honor the full-screen intent when the screen
-        // is already off; explicitly starting the activity covers the
-        // "unlocked, app backgrounded" case too.
-        try {
-            context.startActivity(launchIntent);
+            // Some OEM skins only honor the full-screen intent when the screen
+            // is already off; explicitly starting the activity covers the
+            // "unlocked, app backgrounded" case too.
+            try {
+                context.startActivity(launchIntent);
+            } catch (Exception e) {
+                // Background-start restrictions vary by OEM/Android version; the
+                // notification above is the fallback if this is blocked.
+            }
         } catch (Exception e) {
-            // Background-start restrictions vary by OEM/Android version; the
-            // notification above is the fallback if this is blocked.
-        }
-
-        if (wakeLock != null && wakeLock.isHeld()) {
-            wakeLock.release();
+            // Whatever went wrong, never let it crash the process — a missed
+            // alarm firing is bad, a process death that also kills every
+            // other pending alarm's receiver is worse.
+        } finally {
+            if (wakeLock != null && wakeLock.isHeld()) {
+                wakeLock.release();
+            }
         }
     }
 

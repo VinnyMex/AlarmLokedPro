@@ -102,8 +102,9 @@ const pillStyle: React.CSSProperties = {
   border: 'none',
   borderRadius: 999,
   padding: `${spacing.sm}px ${spacing.md}px`,
+  minHeight: 44,
   color: colors.textPrimary,
-  fontSize: 12,
+  fontSize: 13,
   fontWeight: 600,
   cursor: 'pointer',
 };

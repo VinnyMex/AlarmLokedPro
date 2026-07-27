@@ -53,6 +53,7 @@ export default function ShareScreen() {
               border: 'none',
               borderRadius: 999,
               padding: `${spacing.sm}px ${spacing.md}px`,
+              minHeight: 44,
               background: templateCode === code ? colors.primary : colors.surfaceAlt,
               color: colors.textPrimary,
               fontSize: 12,

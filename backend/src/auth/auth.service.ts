@@ -1,7 +1,9 @@
 import { ConflictException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
+import { OAuth2Client } from 'google-auth-library';
 import * as bcrypt from 'bcrypt';
+import { AuthProvider } from '@prisma/client';
 import { PrismaService } from '../common/prisma.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
@@ -10,11 +12,15 @@ const SALT_ROUNDS = 12;
 
 @Injectable()
 export class AuthService {
+  private readonly googleClient: OAuth2Client;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
-  ) {}
+  ) {
+    this.googleClient = new OAuth2Client(this.config.get<string>('GOOGLE_CLIENT_ID'));
+  }
 
   async register(dto: RegisterDto) {
     const existing = await this.prisma.user.findUnique({ where: { email: dto.email } });
@@ -48,6 +54,42 @@ export class AuthService {
     const valid = await bcrypt.compare(dto.password, user.passwordHash);
     if (!valid) {
       throw new UnauthorizedException('Invalid credentials');
+    }
+
+    return this.issueTokens(user.id, user.email);
+  }
+
+  async loginWithGoogle(idToken: string) {
+    const clientId = this.config.get<string>('GOOGLE_CLIENT_ID');
+    if (!clientId) {
+      throw new UnauthorizedException('Google sign-in is not configured on this server');
+    }
+
+    let payload;
+    try {
+      const ticket = await this.googleClient.verifyIdToken({ idToken, audience: clientId });
+      payload = ticket.getPayload();
+    } catch {
+      throw new UnauthorizedException('Invalid Google ID token');
+    }
+
+    if (!payload?.email) {
+      throw new UnauthorizedException('Google account has no verifiable email');
+    }
+
+    let user = await this.prisma.user.findUnique({ where: { email: payload.email } });
+
+    if (!user) {
+      user = await this.prisma.user.create({
+        data: {
+          name: payload.name ?? payload.email,
+          email: payload.email,
+          authProvider: AuthProvider.GOOGLE,
+          locale: payload.locale ?? 'en-US',
+          settings: { create: {} },
+          progress: { create: {} },
+        },
+      });
     }
 
     return this.issueTokens(user.id, user.email);

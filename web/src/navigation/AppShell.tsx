@@ -9,10 +9,17 @@ const TABS = [
   { to: '/settings', label: 'Settings', icon: '⚙️' },
 ];
 
+// Exported so screens that float content above the tab bar (e.g. Home's
+// "Create alarm" button) can line up against the same value instead of a
+// second hardcoded guess — the tab bar's actual height is this content
+// height plus whatever the device's bottom safe-area inset is.
+export const TAB_BAR_CONTENT_HEIGHT = 56;
+export const TAB_BAR_HEIGHT_CSS = `calc(${TAB_BAR_CONTENT_HEIGHT}px + env(safe-area-inset-bottom))`;
+
 export default function AppShell() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', background: colors.background }}>
-      <main style={{ flex: 1, paddingBottom: 72 }}>
+      <main style={{ flex: 1, paddingBottom: TAB_BAR_HEIGHT_CSS }}>
         <Outlet />
       </main>
       <nav
@@ -36,6 +43,7 @@ export default function AppShell() {
               flex: 1,
               textAlign: 'center',
               padding: `${spacing.sm}px 0`,
+              minHeight: 44,
               textDecoration: 'none',
               color: isActive ? colors.primary : colors.textSecondary,
               fontSize: 12,

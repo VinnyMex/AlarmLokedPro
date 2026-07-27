@@ -11,6 +11,7 @@ import android.os.Build;
 import android.provider.Settings;
 
 import com.getcapacitor.JSObject;
+import com.getcapacitor.PermissionState;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
@@ -38,67 +39,97 @@ public class AlarmSchedulerPlugin extends Plugin {
 
     @PluginMethod
     public void schedule(PluginCall call) {
-        String id = call.getString("id");
-        String title = call.getString("title", "AlarmLock");
-        String body = call.getString("body", "");
-        Long triggerAt = call.getLong("triggerAt");
+        try {
+            String id = call.getString("id");
+            String title = call.getString("title", "AlarmLock");
+            String body = call.getString("body", "");
+            Long triggerAt = call.getLong("triggerAt");
 
-        if (id == null || triggerAt == null) {
-            call.reject("id and triggerAt are required");
-            return;
+            if (id == null || triggerAt == null) {
+                call.reject("id and triggerAt are required");
+                return;
+            }
+
+            AlarmStore.StoredAlarm alarm = new AlarmStore.StoredAlarm(id, title, body, triggerAt);
+            AlarmStore.save(getContext(), alarm);
+            registerWithAlarmManager(getContext(), alarm);
+            call.resolve();
+        } catch (Exception e) {
+            call.reject("Failed to schedule alarm: " + e.getMessage(), e);
         }
-
-        AlarmStore.StoredAlarm alarm = new AlarmStore.StoredAlarm(id, title, body, triggerAt);
-        AlarmStore.save(getContext(), alarm);
-        registerWithAlarmManager(getContext(), alarm);
-        call.resolve();
     }
 
     @PluginMethod
     public void cancel(PluginCall call) {
-        String id = call.getString("id");
-        if (id == null) {
-            call.reject("id is required");
-            return;
+        try {
+            String id = call.getString("id");
+            if (id == null) {
+                call.reject("id is required");
+                return;
+            }
+            cancelWithAlarmManager(getContext(), id);
+            AlarmStore.remove(getContext(), id);
+            call.resolve();
+        } catch (Exception e) {
+            call.reject("Failed to cancel alarm: " + e.getMessage(), e);
         }
-        cancelWithAlarmManager(getContext(), id);
-        AlarmStore.remove(getContext(), id);
-        call.resolve();
     }
 
     @PluginMethod
     public void cancelAll(PluginCall call) {
-        List<AlarmStore.StoredAlarm> alarms = AlarmStore.loadAll(getContext());
-        for (AlarmStore.StoredAlarm alarm : alarms) {
-            cancelWithAlarmManager(getContext(), alarm.id);
+        try {
+            List<AlarmStore.StoredAlarm> alarms = AlarmStore.loadAll(getContext());
+            for (AlarmStore.StoredAlarm alarm : alarms) {
+                cancelWithAlarmManager(getContext(), alarm.id);
+            }
+            AlarmStore.removeAll(getContext());
+            call.resolve();
+        } catch (Exception e) {
+            call.reject("Failed to cancel alarms: " + e.getMessage(), e);
         }
-        AlarmStore.removeAll(getContext());
-        call.resolve();
     }
 
     @PluginMethod
     public void consumePendingAlarmId(PluginCall call) {
-        String alarmId = AlarmStore.consumePendingAlarmId(getContext());
-        JSObject result = new JSObject();
-        result.put("alarmId", alarmId);
-        call.resolve(result);
+        try {
+            String alarmId = AlarmStore.consumePendingAlarmId(getContext());
+            JSObject result = new JSObject();
+            result.put("alarmId", alarmId);
+            call.resolve(result);
+        } catch (Exception e) {
+            call.reject("Failed to read pending alarm: " + e.getMessage(), e);
+        }
     }
 
     @PluginMethod
     public void requestNotificationPermission(PluginCall call) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+        try {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+                JSObject result = new JSObject();
+                result.put("granted", true);
+                call.resolve(result);
+                return;
+            }
+            requestPermissionForAlias("notifications", call, "notificationPermissionCallback");
+        } catch (Exception e) {
+            // Fail open with granted:false rather than crash — a missing
+            // notification permission is recoverable (the full-screen intent
+            // path still works), a crash on every launch is not.
             JSObject result = new JSObject();
-            result.put("granted", true);
+            result.put("granted", false);
             call.resolve(result);
-            return;
         }
-        requestPermissionForAlias("notifications", call, "notificationPermissionCallback");
     }
 
     @PermissionCallback
     private void notificationPermissionCallback(PluginCall call) {
         JSObject result = new JSObject();
-        result.put("granted", "granted".equals(getPermissionState("notifications").toString()));
+        try {
+            PermissionState state = getPermissionState("notifications");
+            result.put("granted", state == PermissionState.GRANTED);
+        } catch (Exception e) {
+            result.put("granted", false);
+        }
         call.resolve(result);
     }
 
@@ -112,22 +143,31 @@ public class AlarmSchedulerPlugin extends Plugin {
     @PluginMethod
     public void checkFullScreenIntentPermission(PluginCall call) {
         JSObject result = new JSObject();
-        boolean allowed = true;
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            NotificationManager manager = getContext().getSystemService(NotificationManager.class);
-            allowed = manager != null && manager.canUseFullScreenIntent();
+        try {
+            boolean allowed = true;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                NotificationManager manager = getContext().getSystemService(NotificationManager.class);
+                allowed = manager != null && manager.canUseFullScreenIntent();
+            }
+            result.put("allowed", allowed);
+        } catch (Exception e) {
+            result.put("allowed", true);
         }
-        result.put("allowed", allowed);
         call.resolve(result);
     }
 
     @PluginMethod
     public void openFullScreenIntentSettings(PluginCall call) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            Intent intent = new Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT);
-            intent.setData(Uri.parse("package:" + getContext().getPackageName()));
-            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            getContext().startActivity(intent);
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                Intent intent = new Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT);
+                intent.setData(Uri.parse("package:" + getContext().getPackageName()));
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                getContext().startActivity(intent);
+            }
+        } catch (Exception e) {
+            // No-op: worst case the user has to find this settings screen
+            // themselves, which isn't worth crashing over.
         }
         call.resolve();
     }

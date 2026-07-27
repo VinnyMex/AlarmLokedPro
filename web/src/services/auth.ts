@@ -16,6 +16,11 @@ export const authApi = {
     storeTokens(tokens.accessToken, tokens.refreshToken);
     return tokens;
   },
+  async loginWithGoogle(idToken: string) {
+    const tokens = await apiRequest<TokenPair>('/auth/google', { method: 'POST', body: { idToken }, auth: false });
+    storeTokens(tokens.accessToken, tokens.refreshToken);
+    return tokens;
+  },
   logout() {
     clearTokens();
   },

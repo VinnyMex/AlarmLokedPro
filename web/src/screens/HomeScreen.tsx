@@ -6,7 +6,8 @@ import { progressApi } from '@/services/progress';
 import { Alarm, UserProgress } from '@/types';
 import AlarmCard from '@/components/AlarmCard';
 import StreakXpCard from '@/components/StreakXpCard';
-import { alarmScheduler, requestNotificationPermission } from '@/services/alarmScheduler';
+import { alarmScheduler } from '@/services/alarmScheduler';
+import { TAB_BAR_HEIGHT_CSS } from '@/navigation/AppShell';
 
 export default function HomeScreen() {
   const navigate = useNavigate();
@@ -25,7 +26,6 @@ export default function HomeScreen() {
 
   useEffect(() => {
     load();
-    requestNotificationPermission();
   }, [load]);
 
   useEffect(() => {
@@ -63,9 +63,10 @@ export default function HomeScreen() {
         onClick={() => navigate('/alarms/new')}
         style={{
           position: 'fixed',
-          bottom: 88,
+          bottom: `calc(${TAB_BAR_HEIGHT_CSS} + ${spacing.sm}px)`,
           left: spacing.md,
           right: spacing.md,
+          minHeight: 48,
           background: colors.primary,
           border: 'none',
           borderRadius: 999,

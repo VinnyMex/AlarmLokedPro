@@ -1,7 +1,7 @@
 import React, { useEffect } from 'react';
 import { BrowserRouter, Navigate, Route, Routes, useNavigate } from 'react-router-dom';
 import { App as CapacitorApp } from '@capacitor/app';
-import { isAuthenticated } from '@/services/api';
+import { isAuthenticated, onAuthExpired } from '@/services/api';
 import { isNativeAlarmSchedulerAvailable, nativeAlarmScheduler } from '@/services/nativeAlarmScheduler';
 import AppShell from '@/navigation/AppShell';
 import LoginScreen from '@/screens/LoginScreen';
@@ -50,10 +50,25 @@ function PendingAlarmHandler() {
   return null;
 }
 
+/**
+ * Access tokens are short-lived; api.ts transparently refreshes them on a
+ * 401 and only fires 'alarmlock:auth-expired' when the refresh token itself
+ * is gone/invalid — that's the one case that should actually bounce the
+ * user back to login rather than just retrying quietly.
+ */
+function AuthExpiredHandler() {
+  const navigate = useNavigate();
+
+  useEffect(() => onAuthExpired(() => navigate('/login', { replace: true })), [navigate]);
+
+  return null;
+}
+
 export default function App() {
   return (
     <BrowserRouter>
       <PendingAlarmHandler />
+      <AuthExpiredHandler />
       <Routes>
         <Route path="/login" element={<LoginScreen />} />
         <Route

@@ -36,12 +36,15 @@ export default function AlarmCard({ alarm, onToggle, onOpen }: Props) {
           {alarm.challengeMode && alarm.challenge ? `Challenge: ${alarm.challenge.itemLabel}` : 'No challenge'}
         </div>
       </div>
-      <label style={{ display: 'inline-flex', alignItems: 'center' }} onClick={(e) => e.stopPropagation()}>
+      <label
+        style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: spacing.sm, margin: -spacing.sm }}
+        onClick={(e) => e.stopPropagation()}
+      >
         <input
           type="checkbox"
           checked={alarm.status === 'ACTIVE'}
           onChange={() => onToggle(alarm)}
-          style={{ width: 20, height: 20, accentColor: colors.primary }}
+          style={{ width: 24, height: 24, accentColor: colors.primary }}
         />
       </label>
     </div>

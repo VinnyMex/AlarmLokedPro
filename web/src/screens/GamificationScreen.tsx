@@ -71,6 +71,7 @@ export default function GamificationScreen() {
               border: 'none',
               borderRadius: 999,
               padding: `${spacing.sm}px ${spacing.md}px`,
+              minHeight: 44,
               background: period === option ? colors.primary : colors.surfaceAlt,
               color: colors.textPrimary,
               fontWeight: 600,
