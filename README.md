@@ -157,10 +157,15 @@ entirely from the Render dashboard in a phone browser, ~10 taps:
    **Build Command** `npm ci && npm run build`, **Publish Directory** `dist`.
    Add environment variable `VITE_API_URL` set to the backend URL from step
    3 (this bakes it into the build — `web/src/services/api.ts` falls back to
-   it when there's no Docker runtime-config). `web/public/_redirects` is
-   already in the repo so client-side routing works on Render's static
-   hosting without extra config.
-5. Open the static site's `https://…onrender.com` URL on your phone. Full
+   it when there's no Docker runtime-config).
+5. **Add the SPA rewrite rule** — required, or any deep link (e.g.
+   `/settings`, `/challenge/:id`) 404s directly from the server instead of
+   loading the app. `web/public/_redirects` is Netlify/Vercel syntax only;
+   Render ignores it. On the static site: **Settings → Redirects/Rewrites →
+   Add Rule** → source `/*`, destination `/index.html`, type **Rewrite**
+   (or via API: `POST /v1/services/{id}/routes` with
+   `{"type":"rewrite","source":"/*","destination":"/index.html"}`).
+6. Open the static site's `https://…onrender.com` URL on your phone. Full
    HTTPS, so the camera challenge screen works like it would in production.
 
 The backend Dockerfile runs `prisma migrate deploy` on every container

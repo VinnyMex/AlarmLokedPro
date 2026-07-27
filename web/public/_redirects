@@ -1,1 +1,11 @@
+# Netlify-style SPA fallback rewrite. Honored by Netlify and Vercel.
+#
+# NOT honored by Render's static sites — Render needs the same rewrite
+# configured as a service property instead (Dashboard: static site →
+# Settings → Redirects/Rewrites → add source "/*", destination
+# "/index.html", type "Rewrite"; or via the API: POST
+# /v1/services/{id}/routes with {"type":"rewrite","source":"/*",
+# "destination":"/index.html"}). Without it, any deep link (e.g.
+# /settings, /challenge/:id) 404s directly from the server instead of
+# falling through to the SPA. See README's Render deployment section.
 /*    /index.html   200
