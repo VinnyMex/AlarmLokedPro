@@ -18,7 +18,15 @@ export const TAB_BAR_HEIGHT_CSS = `calc(${TAB_BAR_CONTENT_HEIGHT}px + env(safe-a
 
 export default function AppShell() {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', background: colors.background }}>
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        minHeight: '100vh',
+        paddingTop: 'env(safe-area-inset-top)',
+        background: colors.background,
+      }}
+    >
       <main style={{ flex: 1, paddingBottom: TAB_BAR_HEIGHT_CSS }}>
         <Outlet />
       </main>

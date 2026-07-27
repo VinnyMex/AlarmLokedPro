@@ -74,6 +74,10 @@ export class AlarmsService {
     });
   }
 
+  get(userId: string, alarmId: string) {
+    return this.findOwned(userId, alarmId);
+  }
+
   private async findOwned(userId: string, alarmId: string) {
     const alarm = await this.prisma.alarm.findUnique({
       where: { id: alarmId },

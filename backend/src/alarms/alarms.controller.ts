@@ -22,6 +22,11 @@ export class AlarmsController {
     return this.alarmsService.list(user.userId);
   }
 
+  @Get(':id')
+  get(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.alarmsService.get(user.userId, id);
+  }
+
   @Patch(':id')
   update(
     @CurrentUser() user: AuthenticatedUser,

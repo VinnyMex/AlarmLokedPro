@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { colors, spacing } from '@/theme/colors';
 import { sharesApi } from '@/services/progress';
+import { Coordinates, getCurrentLocation } from '@/services/location';
 
 const TEMPLATES = ['streak_gold', 'level_up', 'ranking_top10'];
 
@@ -11,6 +12,25 @@ export default function ShareScreen() {
   const [includeTime, setIncludeTime] = useState(true);
   const [watermarkText, setWatermarkText] = useState('AlarmLock Premium');
   const [status, setStatus] = useState<string | null>(null);
+  const [coordinates, setCoordinates] = useState<Coordinates | null>(null);
+  const [locationError, setLocationError] = useState<string | null>(null);
+
+  const handleToggleLocation = async (value: boolean) => {
+    if (!value) {
+      setIncludeLocation(false);
+      setCoordinates(null);
+      return;
+    }
+    setLocationError(null);
+    try {
+      const coords = await getCurrentLocation();
+      setCoordinates(coords);
+      setIncludeLocation(true);
+    } catch (err) {
+      setLocationError(err instanceof Error ? err.message : 'Location permission denied');
+      setIncludeLocation(false);
+    }
+  };
 
   const handleExport = async () => {
     setStatus('Rendering…');
@@ -40,7 +60,11 @@ export default function ShareScreen() {
         </div>
         {includeTime && <div style={{ color: colors.textSecondary, marginTop: spacing.xs }}>🕒 Woke up on time</div>}
         {includeWeather && <div style={{ color: colors.textSecondary, marginTop: spacing.xs }}>☀️ Sunny, 22°C</div>}
-        {includeLocation && <div style={{ color: colors.textSecondary, marginTop: spacing.xs }}>📍 São Paulo, BR</div>}
+        {includeLocation && coordinates && (
+          <div style={{ color: colors.textSecondary, marginTop: spacing.xs }}>
+            📍 {coordinates.latitude.toFixed(3)}, {coordinates.longitude.toFixed(3)}
+          </div>
+        )}
         <div style={{ color: colors.primaryAlt, marginTop: spacing.md, fontSize: 12 }}>{watermarkText}</div>
       </div>
 
@@ -67,7 +91,8 @@ export default function ShareScreen() {
 
       <ToggleRow label="Include time" value={includeTime} onChange={setIncludeTime} />
       <ToggleRow label="Include weather (opt-in)" value={includeWeather} onChange={setIncludeWeather} />
-      <ToggleRow label="Include location (opt-in)" value={includeLocation} onChange={setIncludeLocation} />
+      <ToggleRow label="Include location (opt-in)" value={includeLocation} onChange={handleToggleLocation} />
+      {locationError && <p style={{ color: colors.accent, fontSize: 12, marginTop: -spacing.xs }}>{locationError}</p>}
 
       <label style={{ color: colors.textSecondary, fontSize: 13, marginTop: spacing.md, display: 'block' }}>
         Watermark

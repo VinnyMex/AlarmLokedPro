@@ -88,6 +88,7 @@ export default function App() {
         >
           <Route path="/" element={<HomeScreen />} />
           <Route path="/alarms/new" element={<CreateAlarmScreen />} />
+          <Route path="/alarms/:alarmId/edit" element={<CreateAlarmScreen />} />
           <Route path="/progress" element={<GamificationScreen />} />
           <Route path="/share" element={<ShareScreen />} />
           <Route path="/settings" element={<SettingsScreen />} />

@@ -122,6 +122,7 @@ export default function AlarmChallengeScreen() {
           left: 0,
           right: 0,
           padding: spacing.lg,
+          paddingBottom: `calc(${spacing.lg}px + env(safe-area-inset-bottom))`,
           background: 'rgba(11,11,18,0.85)',
           textAlign: 'center',
         }}

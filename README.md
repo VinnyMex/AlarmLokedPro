@@ -304,6 +304,58 @@ compiling in this sandbox:
   work — Capacitor's WebView localStorage already persists across app
   restarts on its own, that part was never the problem.
 
+A second round of real-device feedback surfaced more:
+
+- **Camera/location permission dialogs never appeared.** `AndroidManifest.xml`
+  was simply missing `<uses-permission android:name="android.permission.CAMERA">`
+  entirely (and the two location permissions) — Capacitor's built-in
+  `BridgeWebChromeClient` already handles bridging `getUserMedia`/
+  `navigator.geolocation` to a native runtime-permission dialog (confirmed by
+  reading its source in `node_modules/@capacitor/android`), it just had no
+  permission to request. Declaring `CAMERA`, `ACCESS_FINE_LOCATION`, and
+  `ACCESS_COARSE_LOCATION` was the actual fix — no custom WebView code
+  needed. `web/src/services/location.ts` (using `@capacitor/geolocation`)
+  and the Share screen's location toggle now request a real fix instead of
+  never calling the API at all.
+- **No way to edit or delete an alarm.** Tapping an alarm card used to jump
+  straight into triggering a live challenge attempt. It now opens an edit
+  form (`CreateAlarmScreen` doing double duty via an optional `:alarmId`
+  route param) with save (`PATCH /alarms/:id`), delete
+  (`DELETE /alarms/:id`), and a "test this challenge now" button that's the
+  new way to reach the trigger flow on demand. Added `GET /alarms/:id` to
+  the backend to load a single alarm for the form.
+- **Top of the app cut off / under the status bar.** Targeting SDK 36
+  (Android 15+) means the OS enforces edge-to-edge layout, so the WebView
+  content extends behind the status bar by default now. Added
+  `padding-top: env(safe-area-inset-top)` to the app shell, the login
+  screen, and the tab bar's height accounting.
+- **Password field had no show/hide toggle.** Added one to the login
+  screen.
+- **"Do I really have to reinstall the APK for every fix?"** No, not
+  anymore for web-only changes — see "Loading the live site instead of a
+  bundled build" below.
+
+### Loading the live site instead of a bundled build
+
+`capacitor.config.ts` now points `server.url` at the deployed
+`alarmlock-web` Render URL instead of loading the bundled `dist/` folder.
+Practically: any fix that's pure web (JS/CSS/HTML — the overwhelming
+majority of what's been fixed in this project so far) goes live the next
+time the app is opened, once it's pushed and Render redeploys — no new APK,
+no reinstall. **Native-level changes still need a new APK** (anything
+touching `AndroidManifest.xml`, `build.gradle` dependencies, or the Java
+plugin code) — the camera/location permissions and the edit-alarm route
+change above are exactly why this round still came with a new APK.
+
+Trade-off worth knowing: the app now needs connectivity on cold start to
+load that URL, like any website. The registered service worker should cache
+the app shell for offline use after a first successful load (WebViews
+support service workers same as a browser tab), but that's not as
+bulletproof as fully bundled assets for a genuinely offline scenario — if
+that becomes a real problem, remove the `server` block from
+`capacitor.config.ts` to go back to fully local, always-offline assets (at
+the cost of needing a new APK for every web fix again).
+
 ### Google Sign-In
 
 Backend (`POST /auth/google`) and native Android (Credential Manager, the
@@ -334,9 +386,11 @@ you, they're tied to your Google account:
    backend (Render → `alarmlock-backend` → Environment) and as
    `VITE_GOOGLE_CLIENT_ID` when building the web app / Android APK (same
    value in both places — the button is hidden entirely until this is set).
-5. Rebuild: web (`VITE_API_URL=... VITE_GOOGLE_CLIENT_ID=... npm run
-   build`), redeploy the Render static site with that same env var added,
-   and for Android run `npm run android:build` again and reinstall the APK.
+5. Add `VITE_GOOGLE_CLIENT_ID` as an environment variable on the
+   `alarmlock-web` Render static site (same Web Client ID value) and
+   redeploy it. Since the Android app now loads that live site directly
+   (see "Loading the live site instead of a bundled build" above), that's
+   the only step needed — no new APK required for this one.
 
 ## API surface
 

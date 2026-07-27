@@ -55,7 +55,7 @@ export default function HomeScreen() {
             key={alarm.id}
             alarm={alarm}
             onToggle={handleToggle}
-            onOpen={(item) => navigate(`/challenge/${item.id}`)}
+            onOpen={(item) => navigate(`/alarms/${item.id}/edit`)}
           />
         ))}
       </div>

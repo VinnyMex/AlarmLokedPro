@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useEffect, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { colors, spacing } from '@/theme/colors';
 import { alarmsApi } from '@/services/alarms';
 
@@ -11,24 +11,45 @@ function defaultTimeInputValue(date: Date) {
 
 export default function CreateAlarmScreen() {
   const navigate = useNavigate();
+  const { alarmId } = useParams<{ alarmId: string }>();
+  const isEditing = Boolean(alarmId);
+
   const [title, setTitle] = useState('Wake up');
   const [time, setTime] = useState(defaultTimeInputValue(new Date(Date.now() + 60 * 60 * 1000)));
   const [challengeMode, setChallengeMode] = useState(true);
   const [difficulty, setDifficulty] = useState<(typeof DIFFICULTIES)[number]>('EASY');
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [loading, setLoading] = useState(isEditing);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!alarmId) return;
+    alarmsApi
+      .get(alarmId)
+      .then((alarm) => {
+        setTitle(alarm.title);
+        setTime(defaultTimeInputValue(new Date(alarm.scheduledAt)));
+        setChallengeMode(alarm.challengeMode);
+        setDifficulty(alarm.challengeDifficulty);
+      })
+      .catch((err) => setError(err instanceof Error ? err.message : 'Failed to load alarm'))
+      .finally(() => setLoading(false));
+  }, [alarmId]);
 
   const handleSave = async (event: React.FormEvent) => {
     event.preventDefault();
     setSaving(true);
+    setError(null);
     try {
       const [hours, minutes] = time.split(':').map(Number);
       const scheduledAt = new Date();
       scheduledAt.setHours(hours, minutes, 0, 0);
-      if (scheduledAt.getTime() < Date.now()) {
+      if (!isEditing && scheduledAt.getTime() < Date.now()) {
         scheduledAt.setDate(scheduledAt.getDate() + 1);
       }
 
-      await alarmsApi.create({
+      const payload = {
         title,
         scheduledAt: scheduledAt.toISOString(),
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
@@ -36,14 +57,38 @@ export default function CreateAlarmScreen() {
         soundId: 'default',
         challengeMode,
         challengeDifficulty: difficulty,
-      });
+      };
+
+      if (isEditing && alarmId) {
+        await alarmsApi.update(alarmId, payload);
+      } else {
+        await alarmsApi.create(payload);
+      }
       navigate('/');
-    } catch (error) {
-      console.warn('Failed to create alarm', error);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save alarm');
     } finally {
       setSaving(false);
     }
   };
+
+  const handleDelete = async () => {
+    if (!alarmId) return;
+    if (!window.confirm('Delete this alarm? This cannot be undone.')) return;
+    setDeleting(true);
+    setError(null);
+    try {
+      await alarmsApi.remove(alarmId);
+      navigate('/');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete alarm');
+      setDeleting(false);
+    }
+  };
+
+  if (loading) {
+    return <p style={{ color: colors.textSecondary, padding: spacing.md }}>Loading alarm…</p>;
+  }
 
   return (
     <form onSubmit={handleSave} style={{ padding: spacing.md, display: 'flex', flexDirection: 'column', gap: spacing.xs }}>
@@ -82,9 +127,27 @@ export default function CreateAlarmScreen() {
         </>
       )}
 
-      <button type="submit" disabled={saving} style={saveButtonStyle}>
-        {saving ? 'Saving…' : 'Save alarm'}
+      {error && <span style={{ color: colors.accent, fontSize: 13 }}>{error}</span>}
+
+      <button type="submit" disabled={saving || deleting} style={saveButtonStyle}>
+        {saving ? 'Saving…' : isEditing ? 'Save changes' : 'Save alarm'}
       </button>
+
+      {isEditing && alarmId && (
+        <>
+          <button
+            type="button"
+            onClick={() => navigate(`/challenge/${alarmId}`)}
+            disabled={saving || deleting}
+            style={secondaryButtonStyle}
+          >
+            Test this challenge now
+          </button>
+          <button type="button" onClick={handleDelete} disabled={saving || deleting} style={deleteButtonStyle}>
+            {deleting ? 'Deleting…' : 'Delete alarm'}
+          </button>
+        </>
+      )}
     </form>
   );
 }
@@ -117,5 +180,27 @@ const saveButtonStyle: React.CSSProperties = {
   color: colors.textPrimary,
   fontWeight: 700,
   fontSize: 16,
+  cursor: 'pointer',
+};
+const secondaryButtonStyle: React.CSSProperties = {
+  marginTop: spacing.sm,
+  background: 'transparent',
+  border: `1px solid ${colors.border}`,
+  borderRadius: 999,
+  padding: spacing.md,
+  color: colors.textSecondary,
+  fontWeight: 600,
+  fontSize: 15,
+  cursor: 'pointer',
+};
+const deleteButtonStyle: React.CSSProperties = {
+  marginTop: spacing.sm,
+  background: 'transparent',
+  border: `1px solid ${colors.accent}`,
+  borderRadius: 999,
+  padding: spacing.md,
+  color: colors.accent,
+  fontWeight: 700,
+  fontSize: 15,
   cursor: 'pointer',
 };

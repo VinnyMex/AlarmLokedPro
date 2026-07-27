@@ -15,6 +15,7 @@ export default function LoginScreen() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const googleButtonRef = useRef<HTMLDivElement>(null);
@@ -94,6 +95,8 @@ export default function LoginScreen() {
         flexDirection: 'column',
         justifyContent: 'center',
         padding: spacing.lg,
+        paddingTop: `calc(${spacing.lg}px + env(safe-area-inset-top))`,
+        paddingBottom: `calc(${spacing.lg}px + env(safe-area-inset-bottom))`,
         background: colors.background,
       }}
     >
@@ -140,15 +143,25 @@ export default function LoginScreen() {
           onChange={(e) => setEmail(e.target.value)}
           required
         />
-        <input
-          style={inputStyle}
-          placeholder="Password"
-          type="password"
-          minLength={8}
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          required
-        />
+        <div style={{ position: 'relative' }}>
+          <input
+            style={{ ...inputStyle, width: '100%', paddingRight: 44 }}
+            placeholder="Password"
+            type={showPassword ? 'text' : 'password'}
+            minLength={8}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+          />
+          <button
+            type="button"
+            onClick={() => setShowPassword((prev) => !prev)}
+            aria-label={showPassword ? 'Hide password' : 'Show password'}
+            style={eyeButtonStyle}
+          >
+            {showPassword ? '🙈' : '👁️'}
+          </button>
+        </div>
 
         {error && <span style={{ color: colors.accent, fontSize: 13 }}>{error}</span>}
 
@@ -174,6 +187,22 @@ const inputStyle: React.CSSProperties = {
   padding: spacing.md,
   color: colors.textPrimary,
   fontSize: 16,
+};
+
+const eyeButtonStyle: React.CSSProperties = {
+  position: 'absolute',
+  right: 4,
+  top: '50%',
+  transform: 'translateY(-50%)',
+  width: 40,
+  height: 40,
+  background: 'none',
+  border: 'none',
+  fontSize: 18,
+  cursor: 'pointer',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
 };
 
 const buttonStyle: React.CSSProperties = {

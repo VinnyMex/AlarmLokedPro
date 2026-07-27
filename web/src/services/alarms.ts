@@ -16,6 +16,7 @@ export interface CreateAlarmInput {
 
 export const alarmsApi = {
   list: () => apiRequest<Alarm[]>('/alarms'),
+  get: (id: string) => apiRequest<Alarm>(`/alarms/${id}`),
   create: (input: CreateAlarmInput) => apiRequest<Alarm>('/alarms', { method: 'POST', body: input }),
   update: (id: string, input: Partial<CreateAlarmInput> & { status?: 'ACTIVE' | 'PAUSED' }) =>
     apiRequest<Alarm>(`/alarms/${id}`, { method: 'PATCH', body: input }),
