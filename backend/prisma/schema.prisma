@@ -1,0 +1,375 @@
+// AlarmLock Premium — Prisma schema
+// Mirrors PRD section 10 (Banco de dados)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum AuthProvider {
+  EMAIL
+  GOOGLE
+  APPLE
+}
+
+enum Theme {
+  LIGHT
+  DARK
+  SYSTEM
+}
+
+enum PermissionStatus {
+  UNKNOWN
+  GRANTED
+  DENIED
+  RESTRICTED
+}
+
+enum SubscriptionStatus {
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  EXPIRED
+}
+
+enum SubscriptionProvider {
+  STRIPE
+  APPLE_IAP
+  GOOGLE_PLAY
+}
+
+enum ChargeType {
+  SUBSCRIPTION
+  CHALLENGE_SKIP
+}
+
+enum ChargeStatus {
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+}
+
+enum AlarmStatus {
+  ACTIVE
+  PAUSED
+  DELETED
+}
+
+enum ChallengeDifficulty {
+  EASY
+  MEDIUM
+  HARD
+}
+
+enum ValidationType {
+  ON_DEVICE
+  CLOUD_VISION
+  CUSTOM_MODEL
+}
+
+enum ItemSource {
+  CATALOG
+  CUSTOM
+}
+
+enum AttemptStatus {
+  IN_PROGRESS
+  COMPLETED
+  SKIPPED
+  FORCE_CLOSED
+  EXPIRED
+}
+
+enum PeriodType {
+  WEEKLY
+  MONTHLY
+}
+
+enum ConsentType {
+  TERMS_OF_USE
+  PRIVACY_POLICY
+  CAMERA
+  LOCATION
+  WEATHER
+  MARKETING
+}
+
+// ---------------------------------------------------------------------------
+// Models
+// ---------------------------------------------------------------------------
+
+model User {
+  id           String       @id @default(uuid())
+  name         String
+  email        String       @unique
+  phone        String?
+  authProvider AuthProvider @default(EMAIL) @map("auth_provider")
+  passwordHash String?      @map("password_hash")
+  locale       String       @default("en-US")
+  timezone     String       @default("UTC")
+  country      String?
+  city         String?
+  state        String?
+  createdAt    DateTime     @default(now()) @map("created_at")
+  updatedAt    DateTime     @updatedAt @map("updated_at")
+  deletedAt    DateTime?    @map("deleted_at")
+
+  settings         UserSettings?
+  subscriptions    Subscription[]
+  paymentMethods   PaymentMethod[]
+  charges          Charge[]
+  alarms           Alarm[]
+  challengeAttempts ChallengeAttempt[]
+  progress         UserProgress?
+  rankings         Ranking[]
+  socialSharePosts SocialSharePost[]
+  auditLogs        AuditLog[]
+  consents         Consent[]
+
+  @@map("users")
+}
+
+model UserSettings {
+  id                        String            @id @default(uuid())
+  userId                    String            @unique @map("user_id")
+  enableLocationShare       Boolean           @default(false) @map("enable_location_share")
+  enableWeatherShare        Boolean           @default(false) @map("enable_weather_share")
+  enableTimeShare           Boolean           @default(true) @map("enable_time_share")
+  enableWatermark           Boolean           @default(true) @map("enable_watermark")
+  defaultLanguage           String            @default("en-US") @map("default_language")
+  theme                     Theme             @default(SYSTEM)
+  alarmVolume               Int               @default(80) @map("alarm_volume")
+  vibrationEnabled          Boolean           @default(true) @map("vibration_enabled")
+  cameraPermissionStatus    PermissionStatus  @default(UNKNOWN) @map("camera_permission_status")
+  notificationPermissionStatus PermissionStatus @default(UNKNOWN) @map("notification_permission_status")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_settings")
+}
+
+model Subscription {
+  id                  String               @id @default(uuid())
+  userId              String               @map("user_id")
+  planCode             String              @map("plan_code")
+  status              SubscriptionStatus   @default(TRIALING)
+  priceMonthly        Decimal              @default(5.00) @map("price_monthly") @db.Decimal(10, 2)
+  currency            String               @default("USD")
+  trialStartAt        DateTime?            @map("trial_start_at")
+  trialEndAt          DateTime?            @map("trial_end_at")
+  currentPeriodStart  DateTime?            @map("current_period_start")
+  currentPeriodEnd    DateTime?            @map("current_period_end")
+  autoRenew           Boolean              @default(true) @map("auto_renew")
+  cancelAtPeriodEnd   Boolean              @default(false) @map("cancel_at_period_end")
+  provider            SubscriptionProvider
+  providerSubscriptionId String?           @map("provider_subscription_id")
+  createdAt           DateTime             @default(now()) @map("created_at")
+  updatedAt           DateTime             @updatedAt @map("updated_at")
+
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  charges Charge[]
+
+  @@index([userId])
+  @@map("subscriptions")
+}
+
+model PaymentMethod {
+  id             String   @id @default(uuid())
+  userId         String   @map("user_id")
+  brand          String
+  last4          String
+  expMonth       Int      @map("exp_month")
+  expYear        Int      @map("exp_year")
+  tokenRef       String   @map("token_ref")
+  billingCountry String?  @map("billing_country")
+  isDefault      Boolean  @default(false) @map("is_default")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("payment_methods")
+}
+
+model Charge {
+  id                String       @id @default(uuid())
+  userId            String       @map("user_id")
+  subscriptionId    String?      @map("subscription_id")
+  chargeType        ChargeType   @map("charge_type")
+  amount            Decimal      @db.Decimal(10, 2)
+  currency          String       @default("USD")
+  status            ChargeStatus @default(PENDING)
+  providerPaymentId String?      @map("provider_payment_id")
+  dueAt             DateTime?    @map("due_at")
+  paidAt            DateTime?    @map("paid_at")
+  metadataJson      Json?        @map("metadata_json")
+  createdAt         DateTime     @default(now()) @map("created_at")
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subscription Subscription? @relation(fields: [subscriptionId], references: [id])
+
+  @@index([userId])
+  @@map("charges")
+}
+
+model Alarm {
+  id                  String   @id @default(uuid())
+  userId              String   @map("user_id")
+  title               String
+  scheduledAt         DateTime @map("scheduled_at")
+  repeatPattern       String?  @map("repeat_pattern") // e.g. "MON,TUE,WED" or "NONE"
+  timezone            String
+  locale              String
+  status              AlarmStatus @default(ACTIVE)
+  soundId             String   @map("sound_id")
+  snoozeEnabled       Boolean  @default(true) @map("snooze_enabled")
+  snoozeMinutes       Int      @default(5) @map("snooze_minutes")
+  challengeMode       Boolean  @default(true) @map("challenge_mode")
+  challengeDifficulty ChallengeDifficulty @default(EASY) @map("challenge_difficulty")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  user      User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  challenge AlarmChallenge?
+  attempts  ChallengeAttempt[]
+  shares    SocialSharePost[]
+
+  @@index([userId])
+  @@map("alarms")
+}
+
+model AlarmChallenge {
+  id                        String         @id @default(uuid())
+  alarmId                   String         @unique @map("alarm_id")
+  itemType                  String         @map("item_type")
+  itemLabel                 String         @map("item_label")
+  itemSource                ItemSource     @default(CATALOG) @map("item_source")
+  validationType             ValidationType @default(ON_DEVICE) @map("validation_type")
+  skipPrice                 Decimal        @default(0.99) @map("skip_price") @db.Decimal(10, 2)
+  isRequired                Boolean        @default(true) @map("is_required")
+  validationTimeoutSeconds   Int            @default(60) @map("validation_timeout_seconds")
+  confidenceThreshold        Float          @default(0.75) @map("confidence_threshold")
+  createdAt                  DateTime       @default(now()) @map("created_at")
+
+  alarm Alarm @relation(fields: [alarmId], references: [id], onDelete: Cascade)
+
+  @@map("alarm_challenges")
+}
+
+model ChallengeAttempt {
+  id               String        @id @default(uuid())
+  alarmId          String        @map("alarm_id")
+  userId           String        @map("user_id")
+  status           AttemptStatus @default(IN_PROGRESS)
+  startedAt        DateTime      @default(now()) @map("started_at")
+  completedAt      DateTime?     @map("completed_at")
+  skippedAt        DateTime?     @map("skipped_at")
+  forceClosedAt    DateTime?     @map("force_closed_at")
+  deviceRebootFlag Boolean       @default(false) @map("device_reboot_flag")
+  validationScore  Float?        @map("validation_score")
+  metadataJson     Json?         @map("metadata_json")
+
+  alarm Alarm @relation(fields: [alarmId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([alarmId])
+  @@map("challenge_attempts")
+}
+
+model UserProgress {
+  id                     String   @id @default(uuid())
+  userId                 String   @unique @map("user_id")
+  xpTotal                Int      @default(0) @map("xp_total")
+  level                  Int      @default(1)
+  consecutiveCompletions Int      @default(0) @map("consecutive_completions")
+  totalCompletions       Int      @default(0) @map("total_completions")
+  totalSkips             Int      @default(0) @map("total_skips")
+  freeSkipBalance        Int      @default(0) @map("free_skip_balance")
+  freeSkipExpiresAt      DateTime? @map("free_skip_expires_at")
+  bestStreak             Int      @default(0) @map("best_streak")
+  updatedAt              DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_progress")
+}
+
+model Ranking {
+  id           String     @id @default(uuid())
+  periodType   PeriodType @map("period_type")
+  periodStart  DateTime   @map("period_start")
+  periodEnd    DateTime   @map("period_end")
+  userId       String     @map("user_id")
+  xpScore      Int        @map("xp_score")
+  rankPosition Int        @map("rank_position")
+  updatedAt    DateTime   @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([periodType, periodStart, userId])
+  @@index([periodType, periodStart])
+  @@map("rankings")
+}
+
+model SocialSharePost {
+  id              String   @id @default(uuid())
+  userId          String   @map("user_id")
+  alarmId         String?  @map("alarm_id")
+  templateCode    String   @map("template_code")
+  includeWeather  Boolean  @default(false) @map("include_weather")
+  includeLocation Boolean  @default(false) @map("include_location")
+  includeTime     Boolean  @default(true) @map("include_time")
+  watermarkText   String?  @map("watermark_text")
+  imagePath       String?  @map("image_path")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  alarm Alarm? @relation(fields: [alarmId], references: [id])
+
+  @@index([userId])
+  @@map("social_share_posts")
+}
+
+model AuditLog {
+  id          String   @id @default(uuid())
+  userId      String?  @map("user_id")
+  eventType   String   @map("event_type")
+  entityType  String   @map("entity_type")
+  entityId    String   @map("entity_id")
+  ipAddress   String?  @map("ip_address")
+  deviceId    String?  @map("device_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+  payloadJson Json?    @map("payload_json")
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([entityType, entityId])
+  @@map("audit_logs")
+}
+
+model Consent {
+  id         String      @id @default(uuid())
+  userId     String      @map("user_id")
+  consentType ConsentType @map("consent_type")
+  version    String
+  grantedAt  DateTime?   @map("granted_at")
+  revokedAt  DateTime?   @map("revoked_at")
+  source     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("consents")
+}
