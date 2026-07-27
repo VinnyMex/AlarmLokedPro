@@ -1,6 +1,9 @@
-// Points at the NestJS backend in /backend. Override with VITE_API_URL in a
-// .env file when the API isn't running on localhost:3000 (e.g. staging).
-const API_BASE_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
+// Points at the NestJS backend in /backend. Resolution order: the runtime
+// config injected by the Docker image at container start (see
+// docker-entrypoint.sh — lets one built image target any backend host),
+// then VITE_API_URL baked in at build time for non-Docker builds, then a
+// localhost default for plain `npm run dev`.
+const API_BASE_URL = window.__ALARMLOCK_API_URL__ || import.meta.env.VITE_API_URL || 'http://localhost:3000';
 
 const ACCESS_TOKEN_KEY = 'alarmlock.accessToken';
 const REFRESH_TOKEN_KEY = 'alarmlock.refreshToken';

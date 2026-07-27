@@ -96,6 +96,42 @@ npm run dev              # http://localhost:5173
 # VITE_API_URL=https://your-api-host npm run dev   # if the API isn't on localhost:3000
 ```
 
+### Everything at once with Docker Compose
+
+```bash
+cp .env.example .env   # set API_URL to your machine's LAN IP if testing from another device
+docker compose up --build
+```
+
+This starts Postgres, runs migrations automatically, and serves the API on
+`:3000` and the web app (built + served by nginx) on `:8080`. The web image
+doesn't bake in the API URL at build time — `API_URL` is injected into a
+small `runtime-config.js` when the container starts (see
+`web/docker-entrypoint.sh`), so the same image works against any backend
+host without rebuilding.
+
+**Testing from a phone:** set `API_URL` in `.env` to this machine's LAN IP
+(e.g. `http://192.168.1.50:3000`), not `localhost` — from the phone,
+`localhost` resolves to the phone itself. Then open
+`http://<that-same-LAN-IP>:8080` in the phone's browser (same Wi-Fi).
+Login, alarms, gamification, share preview, and billing all work fine over
+plain HTTP this way.
+
+**The camera challenge specifically will not work over plain HTTP on a
+phone.** Browsers only grant `getUserMedia` camera access in a "secure
+context" (HTTPS, or `localhost` on the same device) — a LAN IP over `http://`
+doesn't qualify. To test that screen from a phone, put an HTTPS tunnel in
+front of port 8080, e.g.:
+
+```bash
+# after `docker compose up`, in another terminal:
+ngrok http 8080
+```
+
+and open the `https://…ngrok…` URL it prints on the phone instead. For
+anything beyond ad hoc testing, replace the tunnel with a real reverse proxy
+(Caddy/Traefik) terminating TLS in front of the `web` service.
+
 Camera access (`getUserMedia`) requires a secure context — `localhost` is
 exempt, but testing from another device on your LAN needs HTTPS or a tunnel
 (e.g. `ngrok`).
